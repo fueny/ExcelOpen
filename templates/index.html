@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel数据展示系统</title>
+    <link href="https://cdn.datatables.net/1.10.24/css/jquery.dataTables.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/responsive/2.2.7/css/responsive.dataTables.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-height: calc(100vh - 40px);
+        }
+        .upload-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .upload-section.drag-over {
+            background-color: #e8f0fe;
+            border-color: #1a73e8;
+        }
+        #file-input {
+            display: none;
+        }
+        .upload-btn {
+            background-color: #1a73e8;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .upload-btn:hover {
+            background-color: #1557b0;
+        }
+        .loading {
+            display: none;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1a73e8;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #data-table_wrapper {
+            margin-top: 20px;
+        }
+        .dataTables_wrapper .dataTables_filter input {
+            margin-left: 0.5em;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .dataTables_wrapper .dataTables_length select {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .error-message {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+        #table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        #data-table {
+            width: 100% !important;
+            margin-bottom: 20px;
+        }
+        #data-table thead th {
+            background-color: #f8f9fa;
+            padding: 12px 8px;
+            border-bottom: 2px solid #dee2e6;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        #data-table tbody td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        #data-table tbody tr:hover {
+            background-color: #f5f5f5;
+        }
+        .dataTables_paginate .paginate_button {
+            padding: 6px 12px !important;
+            margin: 0 4px;
+            border-radius: 4px !important;
+        }
+        .dataTables_paginate .paginate_button.current {
+            background: #1a73e8 !important;
+            color: white !important;
+            border: 1px solid #1a73e8 !important;
+        }
+        .dataTables_scrollBody {
+            min-height: 600px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Excel数据展示系统</h1>
+        <div class="upload-section" id="drop-zone">
+            <input type="file" id="file-input" accept=".xlsx,.xls">
+            <button class="upload-btn" onclick="document.getElementById('file-input').click()">
+                选择Excel文件
+            </button>
+            <p>或将文件拖放到此处</p>
+        </div>
+        <div class="error-message" id="error-message"></div>
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>正在处理数据，请稍候...</p>
+        </div>
+        <div id="table-container">
+            <table id="data-table" class="display responsive nowrap" style="width:100%">
+            </table>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/responsive/2.2.7/js/dataTables.responsive.min.js"></script>
+    <script>
+        let dataTable = null;
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function handleFile(file) {
+            const fileType = file.name.split('.').pop().toLowerCase();
+            if (!['xlsx', 'xls'].includes(fileType)) {
+                showError('请上传 Excel 文件 (.xlsx 或 .xls)');
+                return;
+            }
+
+            if (file.size > 16 * 1024 * 1024) {
+                showError('文件太大，请上传小于16MB的文件');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error-message').style.display = 'none';
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || '上传失败');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                if (!data.columns || !data.data) {
+                    throw new Error('服务器返回的数据格式不正确');
+                }
+
+                if (dataTable) {
+                    dataTable.destroy();
+                }
+
+                dataTable = $('#data-table').DataTable({
+                    data: data.data,
+                    columns: data.columns.map(col => ({
+                        title: col,
+                        render: function(data, type, row) {
+                            if (data === null || data === undefined || data === "null" || data === "undefined") {
+                                return "";
+                            }
+                            return data;
+                        }
+                    })),
+                    responsive: true,
+                    scrollX: true,
+                    pageLength: 50,
+                    lengthMenu: [[25, 50, 100, 200, -1], [25, 50, 100, 200, "全部"]],
+                    dom: '<"top"lf>rt<"bottom"ip><"clear">',
+                    ordering: true,
+                    autoWidth: false,
+                    scrollY: '600px',
+                    scrollCollapse: true,
+                    fixedHeader: true,
+                    language: {
+                        "sProcessing": "处理中...",
+                        "sLengthMenu": "每页显示 _MENU_ 条",
+                        "sZeroRecords": "没有匹配结果",
+                        "sInfo": "显示第 _START_ 至 _END_ 项结果，共 _TOTAL_ 项",
+                        "sInfoEmpty": "显示第 0 至 0 项结果，共 0 项",
+                        "sInfoFiltered": "(由 _MAX_ 项结果过滤)",
+                        "sInfoPostFix": "",
+                        "sSearch": "搜索:",
+                        "sUrl": "",
+                        "sEmptyTable": "表中数据为空",
+                        "sLoadingRecords": "载入中...",
+                        "sInfoThousands": ",",
+                        "oPaginate": {
+                            "sFirst": "首页",
+                            "sPrevious": "上页",
+                            "sNext": "下页",
+                            "sLast": "末页"
+                        }
+                    },
+                    initComplete: function() {
+                        this.api().columns.adjust();
+                        $(window).resize(function() {
+                            dataTable.columns.adjust();
+                        });
+                    }
+                });
+            })
+            .catch(error => {
+                showError(error.message || '处理文件时发生错误');
+                console.error('Error:', error);
+            })
+            .finally(() => {
+                document.getElementById('loading').style.display = 'none';
+            });
+        }
+
+        function initializeDropZone() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+                const files = e.dataTransfer.files;
+                if (files.length) {
+                    handleFile(files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeDropZone);
+    </script>
+</body>
+</html>
